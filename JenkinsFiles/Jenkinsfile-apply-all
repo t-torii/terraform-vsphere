@@ -1,0 +1,58 @@
+pipeline {
+    agent any
+    environment {
+        TF_VAR_viuser = "pks@sdc.local"
+        TF_VAR_vipassword = "Password12345!"
+        TF_VAR_viserver = "vc04.sdc.local"
+        TF_VAR_datacenter = "Maynds04"
+        TF_VAR_vmname = "test-vm"
+        TF_VAR_vmrp = "cluster3/Resources"
+        TF_VAR_vmdomain = "sdc.local"
+        TF_VAR_vmdatastore = "DS_NFS2"
+        TF_VAR_vmtemp_ubuntu = "ubuntu-template"
+        TF_VAR_vmtemp_centos = "centos-template"
+        TF_VAR_vmnetlabel = "corplan"
+        GOPATH = "/home/ubuntu/go"
+        PATH = "$PATH:/home/ubuntu/go/bin"
+    }
+    stages {
+        stage('git checkout') {
+          steps {
+            deleteDir()
+            dir('terraform') {
+                git(url: 'git@10.32.210.87:test/demo-environment-vsphere.git', branch: 'master', credentialsId: '00505ada-a58a-47c1-8fa7-ff0c6a6f256e')
+                sh "terraform init"
+            }
+            dir('ansible') {
+              git(url: 'git@10.32.210.87:test/ansible-ubuntu.git', branch: 'master', credentialsId: '00505ada-a58a-47c1-8fa7-ff0c6a6f256e')
+            }
+          }
+        }
+        stage('terraform apply') {
+          steps {
+              dir('terraform') {
+                  sh "terraform plan"
+                  sh "terraform apply -auto-approve"
+                  sh "terraform-inventory -inventory > inventory"
+                  sh "cat inventory-vars >> inventory"
+                  sh "rm inventory-vars;touch inventory-vars"
+                  sh "bash ./git-commit.sh"
+                  sshagent(['00505ada-a58a-47c1-8fa7-ff0c6a6f256e']) {
+                    sh "git push origin master"
+                  }
+            }
+          }
+        }
+        stage('ansible playbook run'){
+            steps {
+              dir('ansible') {
+                ansiblePlaybook(playbook: 'site.yml',
+                  inventory: '../terraform/inventory',
+                  become: true,
+                  becomeUser: 'root',
+                  credentialsId: '9f38c819-ef9c-476d-9634-df1ba67677f0')
+              }
+            }
+        }
+    }
+}

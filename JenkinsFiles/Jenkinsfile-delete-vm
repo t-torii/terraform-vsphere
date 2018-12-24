@@ -1,0 +1,37 @@
+pipeline {
+    agent any
+    parameters {
+        string(
+            name: 'IP_Address',
+            defaultValue: "",
+            description: 'IP Address of the VM instances.'
+        )
+    }
+    stages {
+        stage('git checkout') {
+          steps {
+            deleteDir()
+            git(url: 'git@10.32.210.87:test/demo-environment-vsphere.git', branch: 'master', credentialsId: '00505ada-a58a-47c1-8fa7-ff0c6a6f256e')
+          }
+        }
+        stage('create new resources') {
+          steps {
+            sh "echo ${params.IP_Address} > IP_Address"
+            sh '''
+            filename=$(sed -e 's/\\./-/g' IP_Address)
+            ipaddress=$(cat IP_Address)
+            bash delete-instance.sh $filename
+            rm IP_Address
+            '''
+          }
+        }
+        stage('git commit and push'){
+          steps {
+            sshagent(['00505ada-a58a-47c1-8fa7-ff0c6a6f256e']) {
+              sh "git commit -m 'delete resource'"
+              sh "git push origin master"
+            }
+          }
+        }
+    }
+}

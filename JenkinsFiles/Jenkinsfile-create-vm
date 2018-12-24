@@ -1,0 +1,47 @@
+pipeline {
+    agent any
+    parameters {
+        choice(name: 'NCPU', choices: '1\n2\n4\n', description: 'Number of CPU Core')
+        choice(name: 'MEM', choices: '1024\n2048\n4096\n8192', description: 'Memory MB')
+        string(
+            name: 'IP_Address',
+            defaultValue: "",
+            description: 'IP Address of the VM instances.'
+        )
+        choice(name: 'APP', choices: 'nginx\npostgres\nwordpress\n', description: 'Application')
+    }
+    stages {
+        stage('git checkout') {
+          steps {
+            deleteDir()
+            git(url: 'git@10.32.210.87:test/demo-environment-vsphere.git', branch: 'master', credentialsId: '00505ada-a58a-47c1-8fa7-ff0c6a6f256e')
+          }
+        }
+        stage('create new resources') {
+          steps {
+            sh "echo ${params.IP_Address} > IP_Address"
+            sh "echo ${params.NCPU} > NCPU"
+            sh "echo ${params.MEM} > MEM"
+            sh "echo ${params.APP} > APP"
+            sh '''
+            filename=$(sed -e 's/\\./-/g' IP_Address)
+            ipaddress=$(cat IP_Address)
+            ncpu=$(cat NCPU)
+            mem=$(cat MEM)
+            app=$(cat APP)
+            bash create-instance.sh $filename $ipaddress $ncpu $mem $app
+            rm IP_Address NCPU MEM APP
+            '''
+          }
+        }
+        stage('git commit and push'){
+          steps {
+            sh "git add *.tf"
+            sshagent(['00505ada-a58a-47c1-8fa7-ff0c6a6f256e']) {
+              sh "git commit -m 'add resource'"
+              sh "git push origin master"
+            }
+          }
+        }
+    }
+}
